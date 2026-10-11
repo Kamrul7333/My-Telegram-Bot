@@ -51,9 +51,7 @@ def health():
     return "OK", 200
 
 def run_flask_server():
-    # Render স্বয়ংক্রিয়ভাবে PORT এনভায়রনমেন্ট ভ্যারিয়েবল পাঠায়
     port = int(os.environ.get("PORT", 8080))
-    # Flask রানিং ইন ব্যাকগ্রাউন্ড (Thread)
     flask_app.run(host="0.0.0.0", port=port, use_reloader=False)
 
 # Withdrawal States for ConversationHandler
@@ -676,18 +674,21 @@ async def cmd_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =====================================================================
 # SYSTEM INITIALIZER & PIPELINE MAIN LOOP
 # =====================================================================
-def main():
-    # ১. প্রথমে ব্যাকগ্রাউন্ড থ্রেডে ফ্লাস্ক ওয়েব সার্ভার রান করা
-    # এটি রেন্ডার পোর্ট বাইন্ডিং ও লাইভ হেলথ চেক সাকসেসফুলি হ্যান্ডেল করবে।
-    threading.Thread(target=run_flask_server, daemon=True).start()
+async def post_init(application: Application) -> None:
+    # বটের ইভেন্ট লুপের ভেতর থেকে ডাটাবেজ তৈরি এবং শুরু করা হচ্ছে
+    await DatabaseManager.init_db()
+    logger.info("Database initiated successfully via post_init hook!")
 
-    asyncio.get_event_loop().run_until_complete(DatabaseManager.init_db())
+def main():
+    # প্রথমে ব্যাকগ্রাউন্ড থ্রেডে ফ্লাস্ক ওয়েব সার্ভার রান করা
+    threading.Thread(target=run_flask_server, daemon=True).start()
 
     if not BOT_TOKEN:
         logger.error("No BOT_TOKEN found! Add 'TOKEN' environment variable.")
         return
 
-    application = Application.builder().token(BOT_TOKEN).build()
+    # post_init রেজিস্টার করা হচ্ছে যাতে এরর এড়ানো যায়
+    application = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
     job_queue = application.job_queue
     job_queue.run_repeating(referral_verification_scheduler, interval=60, first=10)
@@ -719,7 +720,7 @@ def main():
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, track_chat_member_joins))
     application.add_handler(CallbackQueryHandler(handle_admin_action))
 
-    logger.info("Bot starting...")
+    logger.info("Bot starting with Polling...")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
