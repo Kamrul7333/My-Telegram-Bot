@@ -4,8 +4,8 @@ import asyncio
 import re
 from datetime import datetime, timedelta
 import aiosqlite
-from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
+from flask import Flask
 
 from telegram import (
     Update,
@@ -37,18 +37,24 @@ BOT_TOKEN = os.getenv("TOKEN")
 ADMIN_ID_STR = os.getenv("ADMIN_ID", "8549397639")
 DB_PATH = "referral_bot.db"
 
-# Dummy HTTP Server (রেন্ডার ফ্রী টিয়ারের পোর্ট চেক পাস করার জন্য) [2026 Updated Tech]
-class DummyHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Bot is Running!")
+# =====================================================================
+# FLASK WEB SERVER FOR HEALTH CHECK (RENDER FREE SERVICE OPTIMIZATION)
+# =====================================================================
+flask_app = Flask(__name__)
 
-def run_dummy_server():
+@flask_app.route('/')
+def home():
+    return "Bot is active and running!", 200
+
+@flask_app.route('/health')
+def health():
+    return "OK", 200
+
+def run_flask_server():
+    # Render স্বয়ংক্রিয়ভাবে PORT এনভায়রনমেন্ট ভ্যারিয়েবল পাঠায়
     port = int(os.environ.get("PORT", 8080))
-    server = HTTPServer(("0.0.0.0", port), DummyHandler)
-    logger.info(f"Starting dummy HTTP server on port {port}...")
-    server.serve_forever()
+    # Flask রানিং ইন ব্যাকগ্রাউন্ড (Thread)
+    flask_app.run(host="0.0.0.0", port=port, use_reloader=False)
 
 # Withdrawal States for ConversationHandler
 SELECT_METHOD, ENTER_WALLET, ENTER_AMOUNT = range(3)
@@ -472,7 +478,7 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
     data = query.data
     action, wd_id = None, None
     if data.startswith("wd_approve_"):
-      action = "approved"
+        action = "approved"
         wd_id = int(data.replace("wd_approve_", ""))
     elif data.startswith("wd_reject_"):
         action = "rejected"
@@ -671,8 +677,9 @@ async def cmd_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # SYSTEM INITIALIZER & PIPELINE MAIN LOOP
 # =====================================================================
 def main():
-    # রেন্ডার পোর্টের জন্য ডামি সার্ভার রান করা
-    threading.Thread(target=run_dummy_server, daemon=True).start()
+    # ১. প্রথমে ব্যাকগ্রাউন্ড থ্রেডে ফ্লাস্ক ওয়েব সার্ভার রান করা
+    # এটি রেন্ডার পোর্ট বাইন্ডিং ও লাইভ হেলথ চেক সাকসেসফুলি হ্যান্ডেল করবে।
+    threading.Thread(target=run_flask_server, daemon=True).start()
 
     asyncio.get_event_loop().run_until_complete(DatabaseManager.init_db())
 
@@ -717,4 +724,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-        
